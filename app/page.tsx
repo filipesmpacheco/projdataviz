@@ -27,6 +27,17 @@ const GEAR_COLORS = {
   'manual': '#2874A6',      // Azul médio
 };
 
+// Cores para tipos de combustível (Figura E)
+const FUEL_COLORS: Record<string, string> = {
+  'Gasolina': '#87CEEB',      // Azul claro
+  'Diesel': '#4A4A4A',        // Cinza grafite
+  'Etanol': '#2E7D32',        // Verde
+  'Flex': '#9C27B0',          // Roxo para Flex (caso exista)
+  'GNV': '#FF9800',           // Laranja para GNV
+  'Híbrido': '#4CAF50',       // Verde claro
+  'Elétrico': '#2196F3',      // Azul elétrico
+};
+
 // Tipos
 interface CardProps {
   title: string;
@@ -100,6 +111,38 @@ const lightenColor = (hex: string, percent: number): string => {
   const g = Math.min(255, Math.floor(((num >> 8) & 0x00FF) + ((255 - ((num >> 8) & 0x00FF)) * percent / 100)));
   const b = Math.min(255, Math.floor((num & 0x0000FF) + ((255 - (num & 0x0000FF)) * percent / 100)));
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+};
+
+// Função para normalizar nomes de combustível
+const normalizeFuelName = (fuel: string): string => {
+  const fuelLower = fuel.toLowerCase().trim();
+  
+  // Mapeia variações para nomes padronizados
+  if (fuelLower.includes('alcool') || fuelLower.includes('álcool') || 
+      fuelLower.includes('alcohol') || fuelLower.includes('ethanol') || 
+      fuelLower.includes('etanol')) {
+    return 'Etanol';
+  }
+  if (fuelLower.includes('gasolin') || fuelLower.includes('gas')) {
+    return 'Gasolina';
+  }
+  if (fuelLower.includes('diesel')) {
+    return 'Diesel';
+  }
+  if (fuelLower.includes('flex')) {
+    return 'Flex';
+  }
+  if (fuelLower.includes('gnv')) {
+    return 'GNV';
+  }
+  if (fuelLower.includes('híbrido') || fuelLower.includes('hibrido') || fuelLower.includes('hybrid')) {
+    return 'Híbrido';
+  }
+  if (fuelLower.includes('elétrico') || fuelLower.includes('eletrico') || fuelLower.includes('electric')) {
+    return 'Elétrico';
+  }
+  
+  return fuel; // Retorna original se não encontrar match
 };
 
 const Card = ({ title, value, icon: Icon, subtext }: CardProps) => (
@@ -341,8 +384,9 @@ export default function App() {
     
     data.filter(d => top5Brands.includes(d.brand_clean || '')).forEach(d => {
         const brand = d.brand_clean || '';
-        const fuel = d.fuel_clean || 'Outros';
-        fuelTypesSet.add(fuel as string);
+        const fuelRaw = d.fuel_clean || 'Outros';
+        const fuel = normalizeFuelName(fuelRaw as string); // Normaliza o nome do combustível
+        fuelTypesSet.add(fuel);
         
         if (!fuelGroupedDataObj[brand]) fuelGroupedDataObj[brand] = { name: brand };
         if (!fuelGroupedDataObj[brand][fuel]) {
@@ -356,7 +400,16 @@ export default function App() {
         }
     });
 
-    const fuelTypes = Array.from(fuelTypesSet).sort();
+    // Ordena os tipos de combustível em ordem específica
+    const fuelTypes = Array.from(fuelTypesSet).sort((a, b) => {
+        const order = ['Gasolina', 'Etanol', 'Diesel', 'Flex', 'GNV', 'Híbrido', 'Elétrico'];
+        const indexA = order.indexOf(a);
+        const indexB = order.indexOf(b);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        return a.localeCompare(b);
+    });
     const fuelGroupedData: FuelGroupedData[] = Object.values(fuelGroupedDataObj).map(item => {
         const result: FuelGroupedData = { name: item.name };
         fuelTypes.forEach(fuel => {
@@ -621,6 +674,7 @@ export default function App() {
                             key={fuelType}
                             dataKey={fuelType} 
                             name={`${fuelType} (${position})`}
+                            fill={FUEL_COLORS[fuelType] || COLORS[fuelIndex % COLORS.length]}
                             label={{ 
                               position: 'top', 
                               fontSize: 9, 
@@ -630,14 +684,7 @@ export default function App() {
                                 return `R$${(numValue/1000).toFixed(0)}k`;
                               }
                             }}
-                          >
-                            {chartsData.fuelGroupedData.map((entry, index) => {
-                              const baseColor = BRAND_COLORS[entry.name] || COLORS[index % COLORS.length];
-                              // Varia o clareamento baseado no índice do tipo de combustível
-                              const lightenAmount = fuelIndex * 15;
-                              return <Cell key={`${fuelType}-${index}`} fill={lightenColor(baseColor, lightenAmount)} />;
-                            })}
-                          </Bar>
+                          />
                         );
                       })}
                     </BarChart>
