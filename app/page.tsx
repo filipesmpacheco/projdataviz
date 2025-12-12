@@ -74,11 +74,18 @@ interface GroupedData {
   Manual: number;
 }
 
+interface FuelGroupedData {
+  name: string;
+  [key: string]: string | number;
+}
+
 interface ChartsData {
   brandData: BrandData[];
   gearData: GearData[];
   evolutionData: EvolutionData[];
   groupedData: GroupedData[];
+  fuelGroupedData: FuelGroupedData[];
+  fuelTypes: string[];
   kpis: {
     totalCars: number;
     avgPrice: number;
@@ -323,13 +330,48 @@ export default function App() {
         Manual: item.countManual ? Math.round(item.manual / item.countManual) : 0
     }));
 
+    // 5. Média de Preço por Marca e Tipo de Combustível (Figura E - Extra 2)
+    // Top 6 marcas e dividindo por tipo de combustível
+    interface FuelGroupedDataItem {
+      name: string;
+      [key: string]: string | number | { total: number; count: number };
+    }
+    const fuelGroupedDataObj: Record<string, FuelGroupedDataItem> = {};
+    const fuelTypesSet = new Set<string>();
+    
+    data.filter(d => top5Brands.includes(d.brand_clean || '')).forEach(d => {
+        const brand = d.brand_clean || '';
+        const fuel = d.fuel_clean || 'Outros';
+        fuelTypesSet.add(fuel as string);
+        
+        if (!fuelGroupedDataObj[brand]) fuelGroupedDataObj[brand] = { name: brand };
+        if (!fuelGroupedDataObj[brand][fuel]) {
+            fuelGroupedDataObj[brand][fuel] = { total: 0, count: 0 };
+        }
+        
+        const fuelData = fuelGroupedDataObj[brand][fuel] as { total: number; count: number };
+        if (d.avg_price_clean) {
+            fuelData.total += d.avg_price_clean;
+            fuelData.count += 1;
+        }
+    });
+
+    const fuelTypes = Array.from(fuelTypesSet).sort();
+    const fuelGroupedData: FuelGroupedData[] = Object.values(fuelGroupedDataObj).map(item => {
+        const result: FuelGroupedData = { name: item.name };
+        fuelTypes.forEach(fuel => {
+            const fuelData = item[fuel] as { total: number; count: number } | undefined;
+            result[fuel] = fuelData && fuelData.count > 0 ? Math.round(fuelData.total / fuelData.count) : 0;
+        });
+        return result;
+    });
 
     // KPIs
     const totalCars = data.length;
     const avgPrice = totalCars > 0 ? data.reduce((acc, curr) => acc + (curr.avg_price_clean || 0), 0) / totalCars : 0;
     const mostCommonBrand = brandData.length > 0 ? brandData[0].name : '-';
 
-    return { brandData, gearData, evolutionData, groupedData, kpis: { totalCars, avgPrice, mostCommonBrand } };
+    return { brandData, gearData, evolutionData, groupedData, fuelGroupedData, fuelTypes, kpis: { totalCars, avgPrice, mostCommonBrand } };
   }, [data]);
 
   return (
@@ -541,6 +583,67 @@ export default function App() {
                   </ResponsiveContainer>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">Análise cruzada para identificar impacto do câmbio no valor por marca.</p>
+            </div>
+
+            {/* Row 4: Extra Analysis - Fuel Types */}
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
+                    <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">FIG E (EXTRA)</span>
+                    <Fuel className="w-5 h-5 text-blue-600" />
+                    Preço Médio por Marca e Tipo de Combustível (Top 6)
+                </h3>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartsData.fuelGroupedData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis tickFormatter={(val: number) => `R$${val/1000}k`} />
+                      <RechartsTooltip formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Preço Médio']} />
+                      <Legend />
+                      {chartsData.fuelTypes.map((fuelType, fuelIndex) => {
+                        // Define posição baseada no índice
+                        const positions = ['Esquerda', 'Centro-Esq', 'Centro', 'Centro-Dir', 'Direita'];
+                        const totalFuels = chartsData.fuelTypes.length;
+                        let position = '';
+                        
+                        if (totalFuels === 2) {
+                          position = fuelIndex === 0 ? 'Esquerda' : 'Direita';
+                        } else if (totalFuels === 3) {
+                          position = ['Esquerda', 'Centro', 'Direita'][fuelIndex];
+                        } else if (totalFuels === 4) {
+                          position = ['Esquerda', 'Centro-Esq', 'Centro-Dir', 'Direita'][fuelIndex];
+                        } else {
+                          position = positions[fuelIndex] || `Pos ${fuelIndex + 1}`;
+                        }
+                        
+                        return (
+                          <Bar 
+                            key={fuelType}
+                            dataKey={fuelType} 
+                            name={`${fuelType} (${position})`}
+                            label={{ 
+                              position: 'top', 
+                              fontSize: 9, 
+                              formatter: (value: any) => {
+                                const numValue = Number(value);
+                                if (numValue === 0) return '0';
+                                return `R$${(numValue/1000).toFixed(0)}k`;
+                              }
+                            }}
+                          >
+                            {chartsData.fuelGroupedData.map((entry, index) => {
+                              const baseColor = BRAND_COLORS[entry.name] || COLORS[index % COLORS.length];
+                              // Varia o clareamento baseado no índice do tipo de combustível
+                              const lightenAmount = fuelIndex * 15;
+                              return <Cell key={`${fuelType}-${index}`} fill={lightenColor(baseColor, lightenAmount)} />;
+                            })}
+                          </Bar>
+                        );
+                      })}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">Análise cruzada para identificar impacto do tipo de combustível no valor por marca. As posições indicam a ordem das barras da esquerda para direita.</p>
             </div>
 
           </div>
